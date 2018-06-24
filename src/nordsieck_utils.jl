@@ -33,6 +33,7 @@ function nordsieck_prepare_next!(integrator, cache::T) where T
   @unpack maxη, order, L = cache
   # TODO: further clean up
   @unpack bias1, bias2, bias3, addon = integrator.alg
+  # TODO: Not the same with SUNDIALS
   if integrator.EEst > one(integrator.EEst)
     nordsieck_rewind!(cache)
     cache.n_wait = max(2, cache.n_wait)
@@ -260,6 +261,7 @@ end
 
 function nordsieck_rescale!(cache::T, rewind=false) where T
   isconstcache = T <: OrdinaryDiffEqConstantCache
+  isvode = ( T <: JVODECache || T <: JVODEConstantCache )
   @unpack z, dts, order = cache
   eta = rewind ? dts[2]/dts[1] : dts[1]/dts[2]
   factor = eta
@@ -271,6 +273,7 @@ function nordsieck_rescale!(cache::T, rewind=false) where T
     end
     factor *= eta
   end
+  isvode && ( cache.dtscale = cache.dts[1] )
   return nothing
 end
 
@@ -296,7 +299,7 @@ end
 
 function nordsieck_adjust_order!(cache::T, dorder) where T
   isconstcache = T <: OrdinaryDiffEqConstantCache
-  @unpack order, dts = cache
+  @unpack order, dts, dtscale = cache
   # WIP: uncomment when finished
   #@inbound begin
   begin
@@ -316,8 +319,7 @@ function nordsieck_adjust_order!(cache::T, dorder) where T
       hsum = zero(eltype(cache.dts))
       for j in 1:order-2
         hsum += cache.dts[j+1]
-        # TODO: `hscale`?
-        ξ = hsum / dt
+        ξ = hsum / dtscale
         for i in j+1:-1:1
           cache.l[i+1] = cache.l[i+1] * ξ + cache.l[i]
         end # for i
@@ -382,7 +384,7 @@ end
 function stepsize_η!(integrator, cache, order)
   bias2 = integrator.alg.bias2
   addon = integrator.alg.addon
-  L = order+1
+  L = cache.L
   cache.ηq = inv( (bias2*integrator.EEst)^inv(L) + addon )
   return cache.ηq
 end
@@ -392,13 +394,12 @@ function stepsize_η₊₁!(integrator, cache::T, order) where T
   isconstcache = T <: OrdinaryDiffEqConstantCache
   isconstcache || ( @unpack atmp, ratetmp = cache )
   @unpack uprev, u = integrator
-  @unpack z, c_LTE₊₁, dts, c_𝒟  = cache
+  @unpack z, c_LTE₊₁, dts, c_𝒟, L  = cache
   bias3 = integrator.alg.bias3
   addon = integrator.alg.addon
   q = order
   cache.η₊₁ = 0
   qmax = length(z)-1
-  L = q+1
   if q != qmax
     cache.prev_𝒟 == 0 && return cache.η₊₁
     cquot = (c_𝒟 / cache.prev_𝒟) * (dts[1]/dts[2])^L

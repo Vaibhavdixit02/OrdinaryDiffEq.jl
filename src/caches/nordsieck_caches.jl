@@ -87,7 +87,7 @@ function alg_cache(alg::AN5,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUnits
            tsit5cache, 1)
 end
 
-mutable struct JVODEConstantCache{zType,lType,dtsType,dType,tsit5Type,etaType} <: OrdinaryDiffEqConstantCache
+mutable struct JVODEConstantCache{zType,lType,dtType,dType,tsit5Type,etaType} <: OrdinaryDiffEqConstantCache
   # `z` is the Nordsieck vector
   z::zType
   # `l` is used for the corrector iteration
@@ -106,7 +106,7 @@ mutable struct JVODEConstantCache{zType,lType,dtsType,dType,tsit5Type,etaType} <
   c_𝒟::lType
   prev_𝒟::lType
   # `dts` stores `dt`s
-  dts::dtsType
+  dts::Vector{dtType}
   # `Δ` is the difference between the predictor `uₙ₀` and `uₙ`
   Δ::dType
   # `Tsit5` for the first step
@@ -123,6 +123,7 @@ mutable struct JVODEConstantCache{zType,lType,dtsType,dType,tsit5Type,etaType} <
   η₊₁::etaType
   η₋₁::etaType
   maxη::etaType
+  dtscale::dtType
 end
 
 function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUnits,tTypeNoUnits,uprev,uprev2,f,t,dt,reltol,p,calck,::Type{Val{false}})
@@ -136,10 +137,10 @@ function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUni
   η = zero(dt/dt)
   JVODEConstantCache(z,l,m,
                      c_LTE₊₁,c_LTE,c_LTE₋₁,c_conv,c_𝒟 ,prev_𝒟,
-                     dts,Δ,tsit5tab,2,1,1,2,η,η,η,η,η)
+                     dts,Δ,tsit5tab,2,1,1,2,η,η,η,η,η,dt)
 end
 
-mutable struct JVODECache{uType,rateType,zType,lType,dtsType,dType,etaType,tsit5Type} <: OrdinaryDiffEqMutableCache
+mutable struct JVODECache{uType,rateType,zType,lType,dtType,dType,etaType,tsit5Type} <: OrdinaryDiffEqMutableCache
   u::uType
   uprev::uType
   tmp::uType
@@ -163,7 +164,7 @@ mutable struct JVODECache{uType,rateType,zType,lType,dtsType,dType,etaType,tsit5
   c_𝒟::lType
   prev_𝒟::lType
   # `dts` stores `dt`s
-  dts::dtsType
+  dts::Vector{dtType}
   # `Δ` is the difference between the predictor `uₙ₀` and `uₙ`
   Δ::dType
   # Error estimation
@@ -182,6 +183,7 @@ mutable struct JVODECache{uType,rateType,zType,lType,dtsType,dType,etaType,tsit5
   η₊₁::etaType
   η₋₁::etaType
   maxη::etaType
+  dtscale::dtType
 end
 
 u_cache(c::JVODECache) = ()
@@ -218,5 +220,5 @@ function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUni
   JVODECache(u,uprev,tmp,fsalfirst,ratetmp,
              z, l, m,
              c_LTE₊₁, c_LTE, c_LTE₋₁, c_conv, c_𝒟 , prev_𝒟,
-             dts, Δ, atmp, tsit5cache, 2, 1, 1, 2, η, η, η, η, η)
+             dts, Δ, atmp, tsit5cache, 2, 1, 1, 2, η, η, η, η, η, dt)
 end
