@@ -111,6 +111,8 @@ mutable struct JVODEConstantCache{zType,lType,dtType,dType,tsit5Type,etaType} <:
   Δ::dType
   # `Tsit5` for the first step
   tsit5tab::tsit5Type
+  # `z[Δind]` is scaled `Δ` vector
+  Δind::Int
   L::Int
   # same with `order` or `q`
   order::Int
@@ -127,7 +129,13 @@ mutable struct JVODEConstantCache{zType,lType,dtType,dType,tsit5Type,etaType} <:
 end
 
 function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUnits,tTypeNoUnits,uprev,uprev2,f,t,dt,reltol,p,calck,::Type{Val{false}})
-  N = 12
+  if alg.algorithm == :Adams
+    N = 12
+  elseif alg.algorithm == :BDF
+    N = 6
+  else
+    error("Algorithm must be :BDF or :Adams")
+  end
   z = [rate_prototype for i in 1:N+1]
   Δ = u
   l = zeros(tTypeNoUnits, N+1); m = zeros(l)
@@ -190,6 +198,13 @@ u_cache(c::JVODECache) = ()
 du_cache(c::JVODECache) = (c.fsalfirst,)
 
 function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUnits,tTypeNoUnits,uprev,uprev2,f,t,dt,reltol,p,calck,::Type{Val{true}})
+  if alg.algorithm == :Adams
+    N = 12
+  elseif alg.algorithm == :BDF
+    N = 6
+  else
+    error("Algorithm must be :BDF or :Adams")
+  end
   #################################################
   # Tsit5
   # Cannot alias pointers, since we have to use `k`s to start the Nordsieck vector
@@ -201,8 +216,6 @@ function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUni
   tsit5cache = Tsit5Cache(u,uprev,k1,k2,k3,k4,k5,k6,k7,utilde,tmp,atmp,tab)
   #################################################
   fsalfirst = zeros(rate_prototype)
-  N = 12
-  z = [zeros(rate_prototype) for i in 1:N+1]
   Δ = similar(u,uEltypeNoUnits,indices(u))
   l = zeros(tTypeNoUnits, N+1); m = zeros(l)
   c_LTE₊₁ = c_LTE = c_LTE₋₁ = c_conv = c_𝒟 = prev_𝒟 = zero(tTypeNoUnits)
@@ -210,12 +223,7 @@ function alg_cache(alg::JVODE,u,rate_prototype,uEltypeNoUnits,uBottomEltypeNoUni
   η = zero(dt/dt)
   #################################################
   # Nordsieck Vector
-  z[1] = zeros(rate_prototype); z[2] = zeros(rate_prototype); z[3] = zeros(rate_prototype);
-  z[4] = zeros(rate_prototype); z[5] = zeros(rate_prototype); z[6] = zeros(rate_prototype);
-  z[7] = zeros(rate_prototype); z[8] = zeros(rate_prototype); z[9] = zeros(rate_prototype);
-  z[10] = zeros(rate_prototype); z[11] = zeros(rate_prototype); z[12] = zeros(rate_prototype);
-  z[13] = zeros(rate_prototype)
-  ratetmp = zeros(rate_prototype)
+  z = [zeros(rate_prototype) for i in 1:N+1]
   #################################################
   JVODECache(u,uprev,tmp,fsalfirst,ratetmp,
              z, l, m,

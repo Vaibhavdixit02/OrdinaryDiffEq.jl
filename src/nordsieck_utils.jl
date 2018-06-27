@@ -83,7 +83,7 @@ function ∫₋₁⁰dx(a, deg, k)
   end
 end
 
-# `l` is the coefficients of the polynomial `Λ` that satisfies conditions
+# `l` is the coefficient of the polynomial `Λ` that satisfies conditions
 # Λ(0) = 1, Λ(-1) = 0, and Λ̇(-ξᵢ) = 0, where ξᵢ = (tₙ-tₙ₋₁)/dt.
 # It is described in the paper "A Polyalgorithm for the Numerical Solution
 # of Ordinary Differential Equations" by G. D. Byrne and A. C. Hindmarsh in
@@ -92,7 +92,7 @@ end
 
 # More implementation details are in the
 # https://github.com/JuliaDiffEq/DiffEqDevMaterials repository
-function calc_coeff!(cache::T) where T
+function nordsieck_adams_calc_coeff!(cache::T) where T
   isvode = ( T <: JVODECache || T <: JVODEConstantCache )
   @inbounds begin
     isconst = T <: OrdinaryDiffEqConstantCache
@@ -153,6 +153,22 @@ function calc_coeff!(cache::T) where T
     end # endif isvarorder
     # It is the same with `tq[4]` in SUNDIALS cvode.c
     cache.c_conv = 1//10 / cache.c_LTE
+    return nothing
+  end # end @inbounds
+end
+
+function nordsieck_bdf_calc_coeff!(cache::T) where T
+  isvode = ( T <: JVODECache || T <: JVODEConstantCache )
+  @inbounds begin
+    isconst = T <: OrdinaryDiffEqConstantCache
+    isvarorder = is_nordsieck_change_order(cache, 1)
+    @unpack m, l, dts, order = cache
+    l[1] = l[2] = ξ_inv = ξ⁺ = 1
+    for i in 2:order
+      l[i+1] = 0
+    end
+    α0 = α̂0 = -1
+    # TODO: WIP
     return nothing
   end # end @inbounds
 end
@@ -337,6 +353,58 @@ function nordsieck_adjust_order!(cache::T, dorder) where T
       end # for j
     end # else
   end # @inbound
+end
+
+function nordsieck_bdf_increase_order(cache)
+  isconst = T <: OrdinaryDiffEqConstantCache
+  @unpack l, order, dts, dtscale, L = cache
+  @. l = 0
+  l[3] = α1 = Π = ξ₋₁ = z = 1
+  α0 = -1
+  hsum = dtscale
+  for j in 1:order-1
+    hsum += dts[j+1]
+    ξ = hsum / dtscale
+    Π *= ξ
+    α0 -= inv(j+1)
+    α1 += inv(ξ)
+    for i in j+2:-1:2
+      l[i+1] = l[i+1]*ξ₋₁ + l[i]
+    end
+    ξ₋₁ = ξ
+  end
+
+  A1 = (-α0 - α1) / Π
+  # TODO
+  if isconst
+    @. z[L] = A1*z[end]
+    for j in 2:order
+      @. z[j+1] = muladd(l[j+1], z[L], z[j+1])
+    end
+  else
+    z[L] = A1*z[end]
+    for j in 2:order
+      z[j+1] = muladd(l[j+1], z[L], z[j+1])
+    end
+  end
+end
+
+function nordsieck_bdf_decrease_order(cache)
+  isconst = T <: OrdinaryDiffEqConstantCache
+  @unpack l, order, dts, dtscale, L = cache
+  @. l = 0
+  l[3] = 1
+  hsum = 0
+  for j in 1:order-2
+    hsum += dts[j]
+    ξ = hsum / dtscale
+    for i in j+2:-1:2
+      l[i+1] = muladd(ξ, l[i+1], l[i])
+    end
+  end
+  for j in 2:order-1
+    z[j+1] = muladd(-l[j+1], z[order+1], z[j+1])
+  end
 end
 
 # `η` is `dtₙ₊₁/dtₙ`
